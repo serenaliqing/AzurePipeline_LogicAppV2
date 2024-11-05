@@ -1,0 +1,108 @@
+trigger: none
+
+
+pr: none
+
+
+variables:
+- name: devEnvironment
+  value: 'dev'
+# TODO: provide an email address for the ExampleWorkflow to an send mail to
+- name: toEmailAddress
+  value: ''
+
+- name: Subscription
+  value: '797444e4-d923-42a4-9a85-b1176c77adff'
+
+- name: ResourceGroup
+  value: 'SerenaResourceGroup'
+
+- name: LogicApp
+  value: 'serenasonytest'
+
+- name: parametersFile
+  value: 'parameters.json'
+
+
+stages:
+- stage: Build
+
+  displayName: 'Build Artifact'
+
+  jobs:
+  - job: logic_app_build
+    displayName: 'Build and publish logic app'
+    steps:
+    - task: CopyFiles@2
+      displayName: 'Create project folder'
+      inputs:
+        SourceFolder: '$(System.DefaultWorkingDirectory)/AzurePipleline_LogicAppV2/logic-app-flow'
+        Contents: |
+          host.json
+          connections.json
+          blob/**
+          sql/**
+          
+        TargetFolder: '$(System.DefaultWorkingDirectory)/AzurePipleline_LogicAppV2/project_output'
+
+    - task: ArchiveFiles@2
+      displayName: 'Create project zip'
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)/AzurePipleline_LogicAppV2/project_output'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+        replaceExistingArchive: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish project zip artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+        artifact: 'logicAppCIArtifact'
+        publishLocation: 'pipeline'
+
+
+- stage: Deployment
+
+  displayName: 'Deploy logic app'
+
+  jobs:
+  - job: logic_app_deploy
+    displayName: 'Deploy logic app'
+    steps:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'logicAppCIArtifact'
+        path: '$(Build.ArtifactStagingDirectory)'
+    - script: dir
+      workingDirectory: $(Build.ArtifactStagingDirectory)
+      displayName: List contents of a folder
+
+    - task: AzureCLI@2
+      displayName: 'Deploy Logic App Workflows'
+      inputs:
+        azureSubscription: 'serena' 
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az logicapp deployment source config-zip \
+            --resource-group $(ResourceGroup) \
+            --name $(LogicApp) \
+            --src '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+
+
+    
+    # - task: AzureFunctionApp@1
+    #   displayName: 'Deploy logic app workflows'
+    #   inputs:
+    #     azureSubscription: 'serena'
+    #     ConnectedServiceName: 'serena'
+    #     resourceGroupName: 'Serena-DevOps-logicappV2-deployment'
+    #     location: 'eastus'
+    #     appType: 'functionApp,workflowapp'
+    #     appName: 'serenacicdtest'
+    #     # package: '$(Pipeline.Workspace)/logicAppCIArtifact/$(Build.BuildId).zip'
+    #     appSettings: '-Environment $(devEnvironment) -emailAddress $(toEmailAddress)'
+    #     package: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+
+    #     deploymentMethod: 'zipDeploy'a4
